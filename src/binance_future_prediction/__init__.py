@@ -1,0 +1,2 @@
+"""Binance futures prediction package."""
+

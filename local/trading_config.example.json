@@ -1,0 +1,24 @@
+{
+  "mode": "testnet",
+  "testnet": {
+    "api_key": "",
+    "api_secret": "",
+    "futures_url": "https://testnet.binancefuture.com/fapi"
+  },
+  "production": {
+    "api_key": "",
+    "api_secret": "",
+    "futures_url": "https://fapi.binance.com/fapi"
+  },
+  "trading": {
+    "default_leverage": 10,
+    "fixed_margin_usdt": 10.0,
+    "use_full_account_balance": false,
+    "balance_usage_fraction": 0.98
+  },
+  "news": {
+    "enabled": false,
+    "provider": "rss",
+    "macro_query": "crypto OR bitcoin OR fed OR inflation OR war OR sanctions OR oil OR gas"
+  }
+}
