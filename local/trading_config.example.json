@@ -1,14 +1,38 @@
 {
-  "mode": "testnet",
-  "testnet": {
-    "api_key": "",
-    "api_secret": "",
-    "futures_url": "https://testnet.binancefuture.com/fapi"
-  },
-  "production": {
-    "api_key": "",
-    "api_secret": "",
-    "futures_url": "https://fapi.binance.com/fapi"
+  "provider": "binance",
+  "providers": {
+    "binance": {
+      "mode": "testnet",
+      "market_data_mode": "production",
+      "testnet": {
+        "api_key": "",
+        "api_secret": "",
+        "futures_url": "https://testnet.binancefuture.com/fapi"
+      },
+      "production": {
+        "api_key": "",
+        "api_secret": "",
+        "futures_url": "https://fapi.binance.com/fapi"
+      }
+    },
+    "bybit": {
+      "mode": "testnet",
+      "market_data_mode": "production",
+      "category": "linear",
+      "settle_coin": "USDT",
+      "account_type": "UNIFIED",
+      "position_idx": 0,
+      "testnet": {
+        "api_key": "",
+        "api_secret": "",
+        "futures_url": "https://api-testnet.bybit.com"
+      },
+      "production": {
+        "api_key": "",
+        "api_secret": "",
+        "futures_url": "https://api.bybit.com"
+      }
+    }
   },
   "trading": {
     "default_leverage": 10,

@@ -3,13 +3,11 @@ from datetime import datetime, timedelta
 import logging
 import time
 
-from binance.client import Client
-
 from .config import INTERVAL, MONITOR_INTERVAL_SECONDS, SCAN_INTERVAL_SECONDS
 from .data import get_latest_klines
 from .execution import PositionState, close_position, get_open_position, place_entry_with_exits
 from .prediction import find_best_trade, predict_symbol
-from .settings import get_trading_settings
+from .settings import get_provider_settings, get_trading_settings
 from .universe import SYMBOLS
 
 
@@ -25,7 +23,7 @@ class ActiveTrade:
 
 
 class AutoTradingBot:
-    def __init__(self, client: Client):
+    def __init__(self, client):
         self.client = client
         self.active_trade: ActiveTrade | None = None
         self.last_scan_candle: datetime | None = None
@@ -53,9 +51,12 @@ class AutoTradingBot:
         return df["time"].iloc[-2].to_pydatetime()
 
     def run_forever(self) -> None:
+        provider_name, provider_settings, _ = get_provider_settings(require_credentials=False, public_only=False)
         trading_settings = get_trading_settings()
         LOGGER.info(
-            "Auto trading bot started | leverage=%sx fixed_margin=%.2f use_full_balance=%s balance_fraction=%.2f",
+            "Auto trading bot started | provider=%s mode=%s leverage=%sx fixed_margin=%.2f use_full_balance=%s balance_fraction=%.2f",
+            provider_name,
+            provider_settings.get("mode"),
             trading_settings.get("default_leverage", 10),
             trading_settings.get("fixed_margin_usdt", 10.0),
             trading_settings.get("use_full_account_balance", False),
@@ -73,7 +74,7 @@ class AutoTradingBot:
                 LOGGER.info("Bot stopped by user")
                 break
             except Exception as exc:
-                LOGGER.exception("Bot loop error: %s", exc)
+                LOGGER.exception("Bot loop error on %s: %s", self.client.provider_name, exc)
                 time.sleep(SCAN_INTERVAL_SECONDS)
 
     def scan_and_trade(self) -> None:
@@ -88,14 +89,19 @@ class AutoTradingBot:
             return
 
         self.last_scan_candle = latest_closed_candle
-        LOGGER.info("Scanning new closed candle at %s", latest_closed_candle.strftime("%Y-%m-%d %H:%M:%S"))
+        LOGGER.info(
+            "Scanning new closed candle at %s on %s",
+            latest_closed_candle.strftime("%Y-%m-%d %H:%M:%S"),
+            self.client.provider_name,
+        )
 
         candidate = find_best_trade(self.client)
         if candidate is None:
             return
 
         LOGGER.info(
-            "Best trade selected symbol=%s side=%s prob=%.3f price=%.6f threshold=%.2f gap=%.2f context=%.2f headline=%s",
+            "Best trade selected provider=%s symbol=%s side=%s prob=%.3f price=%.6f threshold=%.2f gap=%.2f context=%.2f headline=%s",
+            self.client.provider_name,
             candidate.symbol,
             candidate.side,
             candidate.probability,
@@ -122,7 +128,8 @@ class AutoTradingBot:
 
     def monitor_position(self, position: PositionState) -> None:
         LOGGER.info(
-            "Open position symbol=%s side=%s entry=%.6f mark=%.6f pnl=%.6f",
+            "Open position provider=%s symbol=%s side=%s entry=%.6f mark=%.6f pnl=%.6f",
+            self.client.provider_name,
             position.symbol,
             position.side,
             position.entry_price,
@@ -152,7 +159,8 @@ class AutoTradingBot:
             return
 
         LOGGER.info(
-            "Monitoring prediction symbol=%s side=%s prob=%.3f context=%.2f",
+            "Monitoring prediction provider=%s symbol=%s side=%s prob=%.3f context=%.2f",
+            self.client.provider_name,
             candidate.symbol,
             candidate.side,
             candidate.probability,

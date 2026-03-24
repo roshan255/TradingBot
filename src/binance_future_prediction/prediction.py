@@ -6,7 +6,6 @@ import logging
 
 import joblib
 import pandas as pd
-from binance.client import Client
 
 from .config import (
     INTERVAL,
@@ -20,6 +19,7 @@ from .config import (
 )
 from .context import context_blocks_trade, get_market_context
 from .data import get_latest_klines
+from .exchanges import ExchangeProvider
 from .features import create_feature_frame
 from .paths import get_symbol_file
 from .universe import FEATURE_COLUMNS, SYMBOLS
@@ -72,14 +72,14 @@ class PredictionEvaluation:
     context_score: float
 
 
-def evaluate_symbol(client: Client, symbol: str) -> PredictionEvaluation:
+def evaluate_symbol(client: ExchangeProvider, symbol: str) -> PredictionEvaluation:
     try:
         model = load_model(symbol)
         metadata = load_model_meta(symbol)
         latest_df = get_latest_klines(symbol, INTERVAL, limit=KLINES_LIMIT, client=client)
         feature_df = create_feature_frame(latest_df, include_target=False)
     except Exception as exc:
-        LOGGER.exception("Prediction setup failed for %s: %s", symbol, exc)
+        LOGGER.exception("Prediction setup failed for %s on %s: %s", symbol, getattr(client, 'provider_name', 'unknown'), exc)
         return PredictionEvaluation(symbol, None, "prediction_setup_failed", "NONE", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
     if feature_df.empty:
@@ -179,11 +179,11 @@ def evaluate_symbol(client: Client, symbol: str) -> PredictionEvaluation:
     )
 
 
-def predict_symbol(client: Client, symbol: str) -> PredictionCandidate | None:
+def predict_symbol(client: ExchangeProvider, symbol: str) -> PredictionCandidate | None:
     return evaluate_symbol(client, symbol).candidate
 
 
-def find_best_trade(client: Client) -> PredictionCandidate | None:
+def find_best_trade(client: ExchangeProvider) -> PredictionCandidate | None:
     best_candidate: PredictionCandidate | None = None
     rejection_counts: dict[str, int] = {}
     strongest_rejected: PredictionEvaluation | None = None
@@ -193,7 +193,7 @@ def find_best_trade(client: Client) -> PredictionCandidate | None:
         if evaluation.candidate is not None:
             candidate = evaluation.candidate
             LOGGER.info(
-                "Candidate %s side=%s prob=%.3f gap=%.3f no_trade=%.3f adx=%.2f context=%.2f price=%.6f",
+                "Candidate %s side=%s prob=%.3f gap=%.3f no_trade=%.3f adx=%.2f context=%.2f price=%.6f provider=%s",
                 candidate.symbol,
                 candidate.side,
                 candidate.probability,
@@ -202,6 +202,7 @@ def find_best_trade(client: Client) -> PredictionCandidate | None:
                 candidate.adx,
                 candidate.context_score,
                 candidate.price,
+                client.provider_name,
             )
             if best_candidate is None or candidate.probability > best_candidate.probability:
                 best_candidate = candidate
@@ -215,7 +216,7 @@ def find_best_trade(client: Client) -> PredictionCandidate | None:
     if best_candidate is None:
         if strongest_rejected is not None:
             LOGGER.info(
-                "No valid trade found. Strongest rejected=%s side=%s prob=%.3f gap=%.3f no_trade=%.3f adx=%.2f context=%.2f reason=%s",
+                "No valid trade found. Strongest rejected=%s side=%s prob=%.3f gap=%.3f no_trade=%.3f adx=%.2f context=%.2f reason=%s provider=%s",
                 strongest_rejected.symbol,
                 strongest_rejected.best_side,
                 strongest_rejected.best_probability,
@@ -224,8 +225,9 @@ def find_best_trade(client: Client) -> PredictionCandidate | None:
                 strongest_rejected.adx,
                 strongest_rejected.context_score,
                 strongest_rejected.rejection_reason,
+                client.provider_name,
             )
         if rejection_counts:
-            LOGGER.info("Rejection summary: %s", rejection_counts)
+            LOGGER.info("Rejection summary on %s: %s", client.provider_name, rejection_counts)
 
     return best_candidate

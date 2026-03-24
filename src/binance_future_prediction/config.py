@@ -46,6 +46,9 @@ MIN_CONTEXT_SCORE_FOR_LONG = -0.25
 MAX_CONTEXT_SCORE_FOR_SHORT = 0.25
 
 SETTINGS_FILE = "local/trading_config.json"
+DEFAULT_PROVIDER = "binance"
+DEFAULT_MARKET_DATA_MODE = "production"
 BINANCE_FUTURES_TESTNET_URL = "https://testnet.binancefuture.com/fapi"
 BINANCE_FUTURES_PRODUCTION_URL = "https://fapi.binance.com/fapi"
-
+BYBIT_FUTURES_TESTNET_URL = "https://api-testnet.bybit.com"
+BYBIT_FUTURES_PRODUCTION_URL = "https://api.bybit.com"

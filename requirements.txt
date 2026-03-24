@@ -5,3 +5,4 @@ catboost
 joblib
 ta
 python-binance
+pybit

@@ -1,22 +1,24 @@
 import logging
 
-from binance.client import Client
-
-from .settings import get_mode_settings
+from .exchanges import create_exchange_client
+from .settings import get_provider_settings
 
 
 LOGGER = logging.getLogger(__name__)
 
 
-def create_testnet_client() -> Client:
-    mode, mode_settings, _ = get_mode_settings(require_credentials=True)
-
-    client = Client(
-        mode_settings["api_key"],
-        mode_settings["api_secret"],
-        testnet=(mode == "testnet"),
+def create_exchange_runtime_client(require_credentials: bool = True):
+    provider_name, provider_settings, _ = get_provider_settings(require_credentials=require_credentials, public_only=False)
+    client = create_exchange_client(require_credentials=require_credentials, public_only=False)
+    LOGGER.info(
+        "Connected to provider=%s mode=%s market_data_mode=%s endpoint=%s",
+        provider_name,
+        provider_settings.get("mode"),
+        provider_settings.get("market_data_mode"),
+        getattr(client, "endpoint", ""),
     )
-    client.FUTURES_URL = mode_settings["futures_url"]
-
-    LOGGER.info("Connected to Binance Futures mode=%s url=%s", mode, mode_settings["futures_url"])
     return client
+
+
+def create_testnet_client():
+    return create_exchange_runtime_client(require_credentials=True)

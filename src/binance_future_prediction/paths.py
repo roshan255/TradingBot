@@ -5,6 +5,8 @@ import uuid
 
 import joblib
 
+from .config import DEFAULT_PROVIDER
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STORAGE_ROOT = Path(os.environ.get("BFP_STORAGE_DIR", PROJECT_ROOT)).expanduser().resolve()
@@ -24,8 +26,38 @@ def resolve_runtime_path(path_like, base_dir: Path | None = None) -> Path:
     return ((base_dir or STORAGE_ROOT) / path).resolve()
 
 
+def get_active_provider_name() -> str:
+    provider = os.environ.get("BFP_PROVIDER")
+    if provider:
+        return provider.lower()
+    try:
+        from .settings import load_runtime_settings
+
+        return str(load_runtime_settings().get("provider", DEFAULT_PROVIDER)).lower()
+    except Exception:
+        return DEFAULT_PROVIDER
+
+
+def _legacy_symbol_dir(symbol: str) -> Path:
+    return DATA_DIR / symbol
+
+
+def _provider_symbol_dir(symbol: str, provider_name: str) -> Path:
+    return DATA_DIR / provider_name / symbol
+
+
 def get_symbol_dir(symbol: str) -> Path:
-    symbol_dir = DATA_DIR / symbol
+    provider_name = get_active_provider_name()
+    if provider_name == "binance":
+        legacy_dir = _legacy_symbol_dir(symbol)
+        provider_dir = _provider_symbol_dir(symbol, provider_name)
+        if legacy_dir.exists() and not provider_dir.exists():
+            legacy_dir.mkdir(parents=True, exist_ok=True)
+            return legacy_dir
+        provider_dir.mkdir(parents=True, exist_ok=True)
+        return provider_dir
+
+    symbol_dir = _provider_symbol_dir(symbol, provider_name)
     symbol_dir.mkdir(parents=True, exist_ok=True)
     return symbol_dir
 
@@ -58,4 +90,3 @@ def write_csv_atomic(path: Path, frame) -> None:
     temp_path = _temp_path(path)
     frame.to_csv(temp_path, index=False)
     os.replace(temp_path, path)
-

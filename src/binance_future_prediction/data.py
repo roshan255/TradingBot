@@ -1,13 +1,13 @@
 import time
 
 import pandas as pd
-from binance.client import Client
 
+from .exchanges import ExchangeProvider, create_exchange_client
 from .paths import get_symbol_file, write_csv_atomic
 
 
-def _create_client() -> Client:
-    return Client()
+def _create_client() -> ExchangeProvider:
+    return create_exchange_client(require_credentials=False, public_only=True)
 
 
 def _read_cached_data(symbol: str) -> pd.DataFrame | None:
@@ -25,21 +25,6 @@ def _read_cached_data(symbol: str) -> pd.DataFrame | None:
     return df
 
 
-def _format_klines(klines) -> pd.DataFrame:
-    df = pd.DataFrame(klines)
-    if df.empty:
-        return pd.DataFrame(columns=["time", "open", "high", "low", "close", "volume"])
-
-    df = df[[0, 1, 2, 3, 4, 5]]
-    df.columns = ["time", "open", "high", "low", "close", "volume"]
-    df["time"] = pd.to_datetime(df["time"], unit="ms")
-
-    for column in ["open", "high", "low", "close", "volume"]:
-        df[column] = df[column].astype(float)
-
-    return df
-
-
 def _save_symbol_data(symbol: str, df: pd.DataFrame, total_candles: int) -> pd.DataFrame:
     trimmed = df.sort_values("time").drop_duplicates(subset="time", keep="last").tail(total_candles).reset_index(drop=True)
     write_csv_atomic(get_symbol_file(symbol, "data.csv"), trimmed)
@@ -48,27 +33,28 @@ def _save_symbol_data(symbol: str, df: pd.DataFrame, total_candles: int) -> pd.D
 
 def download_historical_data(symbol: str, interval: str, limit: int, total_candles: int) -> pd.DataFrame:
     client = _create_client()
-    all_data = []
+    all_batches: list[pd.DataFrame] = []
     end_time = None
+    fetched = 0
 
-    while len(all_data) < total_candles:
-        klines = client.futures_klines(
-            symbol=symbol,
-            interval=interval,
-            limit=limit,
-            endTime=end_time,
-        )
-
-        if not klines:
+    while fetched < total_candles:
+        batch = client.fetch_klines(symbol, interval, limit=limit, end_time_ms=end_time)
+        if batch.empty:
             break
 
-        all_data = klines + all_data
-        end_time = klines[0][0] - 1
+        all_batches.insert(0, batch)
+        fetched = sum(len(frame) for frame in all_batches)
+        end_time = int(batch["time"].iloc[0].timestamp() * 1000) - 1
 
-        print(f"Downloading {symbol}: {len(all_data)}/{total_candles}", end="\r", flush=True)
+        print(f"Downloading {symbol}: {fetched}/{total_candles}", end="\r", flush=True)
+        if len(batch) < limit:
+            break
         time.sleep(0.15)
 
-    df = _format_klines(all_data)
+    if not all_batches:
+        raise RuntimeError(f"No historical data fetched for {symbol}")
+
+    df = pd.concat(all_batches, ignore_index=True)
     return _save_symbol_data(symbol, df, total_candles)
 
 
@@ -84,19 +70,9 @@ def ensure_historical_data(symbol: str, interval: str, limit: int, total_candles
     last_time = cached["time"].iloc[-1]
     start_time_ms = int(last_time.timestamp() * 1000) + 1
 
-    new_rows = []
+    new_rows: list[pd.DataFrame] = []
     while True:
-        klines = client.futures_klines(
-            symbol=symbol,
-            interval=interval,
-            limit=limit,
-            startTime=start_time_ms,
-        )
-
-        if not klines:
-            break
-
-        batch = _format_klines(klines)
+        batch = client.fetch_klines(symbol, interval, limit=limit, start_time_ms=start_time_ms)
         if batch.empty:
             break
 
@@ -119,7 +95,6 @@ def ensure_historical_data(symbol: str, interval: str, limit: int, total_candles
     return trimmed
 
 
-def get_latest_klines(symbol: str, interval: str, limit: int = 500, client: Client | None = None) -> pd.DataFrame:
+def get_latest_klines(symbol: str, interval: str, limit: int = 500, client: ExchangeProvider | None = None) -> pd.DataFrame:
     active_client = client or _create_client()
-    klines = active_client.futures_klines(symbol=symbol, interval=interval, limit=limit)
-    return _format_klines(klines)
+    return active_client.fetch_klines(symbol, interval, limit=limit)

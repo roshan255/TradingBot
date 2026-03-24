@@ -2,11 +2,13 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import joblib
+import pandas as pd
 
 from .config import INTERVAL, MIN_LIVE_VOLATILITY, SIGNAL_THRESHOLD
 from .data import get_latest_klines
 from .features import create_feature_frame
 from .paths import get_symbol_file
+from .settings import get_provider_settings
 from .universe import FEATURE_COLUMNS, SYMBOLS
 
 
@@ -20,15 +22,20 @@ class Signal:
 
 
 def generate_live_signals() -> list[Signal]:
+    provider_name, _, _ = get_provider_settings(require_credentials=False, public_only=True)
     results: list[Signal] = []
 
     for symbol in SYMBOLS:
-        model = joblib.load(get_symbol_file(symbol, "model.pkl"))
+        model_path = get_symbol_file(symbol, "model.pkl")
+        if not model_path.exists():
+            continue
+
+        model = joblib.load(model_path)
         latest_df = get_latest_klines(symbol, INTERVAL)
         feature_df = create_feature_frame(latest_df, include_target=False)
 
         if feature_df.empty:
-            print(symbol, "Not enough candles for indicators")
+            print(symbol, f"Not enough candles for indicators on {provider_name}")
             continue
 
         latest = feature_df.iloc[-1:]
@@ -36,7 +43,7 @@ def generate_live_signals() -> list[Signal]:
         if volatility < MIN_LIVE_VOLATILITY:
             continue
 
-        X = latest[FEATURE_COLUMNS]
+        X = latest[FEATURE_COLUMNS].apply(pd.to_numeric, errors="coerce").fillna(0.0)
         probs = model.predict_proba(X)[0]
         prob_dict = dict(zip(model.classes_, probs))
 
@@ -75,4 +82,3 @@ def generate_live_signals() -> list[Signal]:
         )
 
     return sorted(results, key=lambda item: item.probability, reverse=True)
-
